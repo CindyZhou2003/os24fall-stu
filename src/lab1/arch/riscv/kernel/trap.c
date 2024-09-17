@@ -19,20 +19,10 @@ void trap_handler(unsigned long scause, unsigned long sepc) {
             printk("%s", "[Trap Handler] S-Mode Timer Interrupt!\n");
             clock_set_next_event();
         } else {
-            printk("Unknown interrupt");
+            printk("Other interrupt");
         }
     } else {  // 异常
         printk("Exception occurred, type: %lx at SEPC: %lx\n", scause, sepc);
-        switch (scause & 0xF) {
-            case 0x0D:  // Load access fault
-                printk("Load access fault\n");
-                break;
-            case 0x0F:  // Store access fault
-                printk("Store access fault\n");
-                break;
-            default:
-                printk("Unhandled exception, type: %lx\n", scause);
-        }
     }
 }
 

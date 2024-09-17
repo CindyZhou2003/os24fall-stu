@@ -24,8 +24,9 @@ _start:
     csrw sie, t1        # 将更改后的值保存回sie寄存器
     # ----------------------
 
-
+    # set first time interrupt
     call clock_set_next_event
+    	# 调用clock.c中的clock_set_next_event函数
 
     # Enable global interrupts in Supervisor mode (SIE)
     csrr t0, sstatus        # 读取sie寄存器的值

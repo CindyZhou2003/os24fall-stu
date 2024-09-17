@@ -1,10 +1,7 @@
 #include "printk.h"
 #include "sbi.h"
-// #include "../arch/riscv/kernel/clock.c"
 
-// extern unsigned long get_cycles();
 extern void clock_set_next_event();
-
 
 extern void test();
 
@@ -44,10 +41,6 @@ int start_kernel() {
 
     // check_sstatus();
     // check_sscratch();
-
-    // init_trap();  // 设置trap处理函数
-    // enable_interrupts();  // 启用全局中断和时钟中断
-    //clock_set_next_event();  // 设置时钟中断
 
     test(); // DO NOT DELETE !!!
 

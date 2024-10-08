@@ -3,12 +3,12 @@
 .globl _traps 
 _traps:
     # 1. 保存 31 个寄存器和 sepc 到栈
-    csrw sscratch, sp           # 将原先的栈顶指针保存到 sscratch
 
     addi sp, sp, -264           # 分配栈空间，32 * 8 + 8 = 264 字节
 
     sd x0, 0(sp)
     sd x1, 8(sp)
+
     sd x3, 24(sp)
     sd x4, 32(sp)
     sd x5, 40(sp)
@@ -42,8 +42,7 @@ _traps:
     csrr t0, sepc               # 读取 sepc
     sd t0, 256(sp)              # 保存 sepc 到栈上
 
-    csrr t0, sscratch
-    sd t0, 16(sp)               # 保存 sscratch
+    sd x2, 16(sp)               # 保存 x2
 
     # 2. 调用 trap_handler
     csrr a0, scause             # scause -> a0

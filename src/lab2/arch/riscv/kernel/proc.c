@@ -1,3 +1,4 @@
+// arch/riscv/kernel/proc.c
 #include "mm.h"
 #include "defs.h"
 #include "proc.h"
@@ -11,25 +12,44 @@ struct task_struct *current;        // 指向当前运行线程的 task_struct
 struct task_struct *task[NR_TASKS]; // 线程数组，所有的线程都保存在此
 
 void task_init() {
-    srand(2024);
+    srand(2024);  // 设置随机种子
 
-    // 1. 调用 kalloc() 为 idle 分配一个物理页
-    // 2. 设置 state 为 TASK_RUNNING;
-    // 3. 由于 idle 不参与调度，可以将其 counter / priority 设置为 0
-    // 4. 设置 idle 的 pid 为 0
-    // 5. 将 current 和 task[0] 指向 idle
+    // 1. 为 idle 线程分配物理页
+    idle = (struct task_struct *)kalloc();
+    if (!idle) {
+        printk("Failed to allocate memory for idle task.\n");
+        return;
+    }
 
-    /* YOUR CODE HERE */
+    // 2. 初始化 idle 线程的状态
+    idle->state = TASK_RUNNING;
+    idle->counter = 0;
+    idle->priority = 12345;
+    idle->pid = 0; // 将 idle 线程的 pid 设为 0
 
-    // 1. 参考 idle 的设置，为 task[1] ~ task[NR_TASKS - 1] 进行初始化
-    // 2. 其中每个线程的 state 为 TASK_RUNNING, 此外，counter 和 priority 进行如下赋值：
-    //     - counter  = 0;
-    //     - priority = rand() 产生的随机数（控制范围在 [PRIORITY_MIN, PRIORITY_MAX] 之间）
-    // 3. 为 task[1] ~ task[NR_TASKS - 1] 设置 thread_struct 中的 ra 和 sp
-    //     - ra 设置为 __dummy（见 4.2.2）的地址
-    //     - sp 设置为该线程申请的物理页的高地址
+    // 3. 设置当前线程和任务数组
+    current = idle;
+    task[0] = idle;
 
-    /* YOUR CODE HERE */
+    // 为 task[1] ~ task[NR_TASKS - 1] 进行初始化
+    for (int i = 1; i < NR_TASKS; ++i) {
+        // 1. 为每个线程分配物理页
+        task[i] = (struct task_struct *)kalloc();
+        if (!task[i]) {
+            printk("Failed to allocate memory for task %d.\n", i);
+            return;
+        }
+
+        // 2. 初始化线程状态
+        task[i]->state = TASK_RUNNING;
+        task[i]->counter = 0;
+        task[i]->priority =  rand() % 10 + 1;  // 设置随机优先级
+        task[i]->pid = i;
+
+        // 3. 设置线程的 ra 和 sp
+        task[i]->thread.ra = (uint64_t)__dummy;
+        task[i]->thread.sp = (uint64_t)task[i] + 4096;  // 物理页的高地址
+    }
 
     printk("...task_init done!\n");
 }
@@ -72,4 +92,101 @@ void dummy() {
             #endif
         }
     }
+}
+
+
+extern void __switch_to(struct task_struct *prev, struct task_struct *next);
+
+void switch_to(struct task_struct *next) {
+    if (current == next) {
+        printk(RED"Already running task %d, no switch needed.\n", next->pid); 
+        return; 
+    } 
+
+    struct task_struct *prev = current;
+    printk(RED"Switching from task %d to task %d :[PID = %d, COUNTER = %d, PRIORITY = %d]\n", 
+        prev->pid, next->pid, next->counter, next->priority);
+    current = next;  // 更新 current 指向
+
+    // 传递 prev 和 next
+    __switch_to(prev, next);  // 切换上下文
+}
+
+void do_timer(void) {   
+   /* 如果当前线程是 idle 线程 直接进行调度 */
+    if (current == idle || current->pid == 0) {
+        printk(YELLOW"idle process is running!\n");
+        schedule();
+        return;
+    }
+    /* 如果当前线程不是 idle 对当前线程的运行剩余时间减 1 
+       若剩余时间仍然大于0 则直接返回 否则进行调度 */
+    
+
+    if(current->counter > 0) {
+        current->counter -- ;
+        printk(YELLOW"do_timer: Task %d has counter = %d\n", current->pid, current->counter);
+        return;
+    }
+
+    if (current->counter == 0) {
+        printk(YELLOW"Task %d has counter 0, forcing switch...\n", current->pid);
+        schedule();  // Trigger rescheduling
+        return;
+    }
+
+}
+
+
+void schedule() {
+    uint64_t max_counter = 0;
+    struct task_struct *next_task = NULL;
+
+    printk("Starting schedule...\n");
+
+    // 检查所有任务状态
+    for (int i = 1; i < NR_TASKS; ++i) {
+        printk("Task %d: [PID = %d, COUNTER = %d, PRIORITY = %d]\n",
+               i, task[i]->pid, task[i]->counter, task[i]->priority);
+
+        if (task[i]->state == TASK_RUNNING && task[i]->counter >= max_counter && task[i]->counter > 0) {
+            max_counter = task[i]->counter;
+            next_task = task[i];
+        }
+    }
+    printk("Checking counters, max_counter = %d\n", max_counter);
+
+    // 如果所有任务的 counter 都为 0，则重新分配 counter = priority
+    if (max_counter == 0 || next_task == NULL) {
+        printk("All task counters are 0, resetting counters based on priority...\n");
+        for (int i = 1; i < NR_TASKS; ++i) {
+            task[i]->counter = task[i]->priority;
+            // task[i]->state = TASK_RUNNING;  // 强制将所有任务状态设置为 TASK_RUNNING
+            printk(GREEN"SET [PID = %d PRIORITY = %d COUNTER = %d, STATE = %d]\n",
+                   task[i]->pid, task[i]->priority, task[i]->counter, task[i]->state);
+        }
+
+        // 重新选择调度的线程
+        for (int i = 1; i < NR_TASKS; ++i) {
+            if (task[i]->state == TASK_RUNNING && task[i]->counter >= max_counter && task[i]->counter > 0) {
+                max_counter = task[i]->counter;
+                next_task = task[i];
+            }
+        }
+        printk("After resetting counters, max_counter = %d\n", max_counter);
+    }
+    
+
+    if (next_task) {
+        printk(PURPLE"Selected task %d with counter %d for next run.\n", next_task->pid, next_task->counter);
+    }
+
+    // 调用 switch_to 切换到下一个线程
+    if (next_task && next_task != current) {
+        printk(PURPLE"Switching to task %d with counter %d\n", next_task->pid, next_task->counter);
+        switch_to(next_task);
+    } else {
+        printk(PURPLE"No task switch needed. Current task: %d, Counter: %d\n", current->pid, current->counter);
+    }
+
 }
